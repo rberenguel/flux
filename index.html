@@ -35,28 +35,30 @@ body, html {
         .splash-content h1 {
             font-size: clamp(48px, 12vw, 96px);
             color: #00FFFF;
+            margin: auto;
             margin-bottom: 40px;
             text-shadow: 0 0 5px #FFFF0055, 0 0 8px #FFFF00;
             max-width: 500px;
             width: 90%;
+            text-align: center;
         }
-        .splash-content .controls {
+        .splash-content .instructions {
             font-family: monospace;
-            font-size: clamp(14px, 2.5vw, 16px);
+            font-size: clamp(14px, 3vw, 16px);
             color: #CCCCCC;
             display: inline-block;
             border: 1px solid #40406a;
             padding: 20px 30px;
             background: rgba(10, 10, 20, 0.3);
         }
-        .splash-content .controls p {
+        .splash-content .instructions p {
             margin: 12px 0;
             display: grid;
-            grid-template-columns: 70px auto;
+            grid-template-columns: 120px auto;
             gap: 20px;
             text-align: left;
         }
-        .splash-content .controls p span:first-child {
+        .splash-content .instructions p span:first-child {
             color: #FFFFFF;
             font-weight: bold;
             text-align: right;
@@ -95,7 +97,7 @@ body, html {
         #grind-vignette.turbo {
             box-shadow: inset 0 0 120px 40px rgba(255, 0, 255, 0.7);
         }
-        .pause-overlay {
+        .overlay {
             position: fixed;
             top: 0;
             left: 0;
@@ -106,16 +108,26 @@ body, html {
             justify-content: center;
             align-items: center;
             z-index: 10001;
+            flex-direction: column;
         }
-        .pause-menu {
+        .menu {
             text-align: center;
         }
-        .pause-menu h1 {
+        .menu h1 {
             font-size: clamp(48px, 12vw, 96px);
             margin-bottom: 20px;
         }
-        .pause-menu p {
+        .menu p {
             font-size: clamp(16px, 3vw, 24px);
+        }
+        /* --- FIX FOR iOS SAVE --- */
+        #gameOverDOMContainer {
+            -webkit-touch-callout: default !important;
+            user-select: auto !important;
+            margin-top: 20px;
+        }
+        image.journey {
+          border: 5px solid #00ffff;
         }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -127,19 +139,31 @@ body, html {
   <div id="splash-screen">
       <div class="splash-content">
           <h1>FLUX</h1>
-          <div class="controls">
-              <p><span>TURN</span><span>ARROWS / TAP SIDES</span></p>
-              <p><span>ACTION</span><span>SPACE / TAP BOTH</span></p>
-              <p><span>PAUSE</span><span>ESCAPE / TAP TOP</span></p>
+          <div class="instructions">
+            <p><span>5 WHITE DOTS</span><span>NEXT LEVEL</span></p>
+            <p><span>GREEN DOTS</span><span>SPEED BOOST</span></p>
+            <p><span>MAGENTA DOTS</span><span>TURBO BOOST</span></p>
+            <p><span>GRIND</span><span>TRAILS FOR FREE BOOST</span></p>
+            <hr/>
+            <p><span>TURN</span><span>ARROWS / TAP SIDES</span></p>
+            <p><span>ACTION</span><span>SPACE / TAP BOTH</span></p>
+            <p><span>PAUSE</span><span>ESCAPE / TAP TOP</span></p>
           </div>
           <p class="start-prompt">TAP ANYWHERE TO START</p>
       </div>
   </div>
   <div id="grind-vignette"></div>
-  <div id="pause-overlay" class="pause-overlay">
-      <div class="pause-menu">
+  <div id="pause-overlay" class="overlay">
+      <div class="menu">
           <h1>PAUSED</h1>
           <p>Tap anywhere or press Escape to resume</p>
+      </div>
+  </div>
+  <div id="game-over-overlay" class="overlay">
+      <div class="menu">
+          <h1 id="game-over-title">GAME OVER</h1>
+          <p id="level-text"></p>
+          <p id="game-over-subtitle">Tap to Restart</p>
       </div>
   </div>
     <script src="main.js"></script>

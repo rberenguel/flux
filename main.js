@@ -60,6 +60,7 @@
     const UI_PADDING = 20;
     const FADE_DURATION = 30; // frames
     const PAUSE_AREA_HEIGHT = 80; // pixels from the top
+    const MINIMAP_CAPTURE_RESOLUTION = 512;
 
     // --- PIXI App Setup ---
     const app = new PIXI.Application();
@@ -89,11 +90,10 @@
     world.addChild(playerSprite);
     
     // --- UI Objects ---
-    let enemyIndicator, gameOverUI, powerupIndicator, dotCountText, levelText, screenFade, splashScreenElement;
+    let enemyIndicator, powerupIndicator, dotCountText, screenFade, splashScreenElement;
     let dotIndicatorContainer;
-    let gameOverTitle, gameOverSubtitle;
-    let minimapContainer, minimapTrails, minimapPlayer, minimapEnemies, minimapPowerups, minimapDots;
-    let pauseOverlay;
+    let minimapContainer, minimapBackground, minimapTrails, minimapPlayer, minimapEnemies, minimapPowerups, minimapDots, minimapDeaths;
+    let pauseOverlay, gameOverOverlay;
 
     // --- Game State ---
     let player, enemies = [];
@@ -104,11 +104,14 @@
     let powerups = [];
     let dots = [];
     let fadingTrails = [];
+    let deathLocations = [];
     let powerupInterval;
     let vignetteElement;
     let transitionTimer = 0;
     let activeTouches = 0;
     let readyTimer
+    let levelMinimaps = [];
+    let finalMinimapImage = null;
 
     function setupReadyUI() {
     readyText = new PIXI.Text({text: 'GET READY!', style: new PIXI.TextStyle({
@@ -155,26 +158,6 @@
         }
     }
     
-    function setupGameOverUI() {
-        gameOverUI = new PIXI.Container();
-        gameOverTitle = new PIXI.Text({text: '', style: new PIXI.TextStyle({
-            fontFamily: 'Sixtyfour', fontSize: 64, fontWeight: 'bold', fill: 0xFFFFFF,
-            stroke: { color: 0x000000, width: 5 }, align: 'center'
-        })});
-        gameOverTitle.anchor.set(0.5);
-        gameOverSubtitle = new PIXI.Text({text: '', style: new PIXI.TextStyle({
-            fontFamily: 'Sixtyfour', fontSize: 24, fill: 0xCCCCCC, align: 'center'
-        })});
-        gameOverSubtitle.anchor.set(0.5);
-        levelText = new PIXI.Text({text: '', style: new PIXI.TextStyle({
-            fontFamily: 'Sixtyfour', fontSize: 28, fontWeight: 'bold', fill: 0xCCCCCC, align: 'center'
-        })});
-        levelText.anchor.set(0.5);
-        gameOverUI.addChild(gameOverTitle, gameOverSubtitle, levelText);
-        gameOverUI.visible = false;
-        app.stage.addChild(gameOverUI);
-    }
-    
     function setupDotCountUI() {
         dotCountText = new PIXI.Text({text: '', style: new PIXI.TextStyle({
             fontFamily: 'Sixtyfour', fontSize: 32, fontWeight: 'bold', fill: 0xFFFFFF,
@@ -190,11 +173,41 @@
     }
 
     function showGameOverUI() {
-        gameOverTitle.text = 'GAME OVER';
-        gameOverTitle.style.fill = ENEMY_COLOR;
-        levelText.text = `You reached level ${currentLevel}`;
-        gameOverSubtitle.text = 'Tap to Restart';
-        gameOverUI.visible = true;
+        document.getElementById('level-text').textContent = `You reached level ${currentLevel}`;
+        gameOverOverlay.style.display = 'flex';
+
+        if (finalMinimapImage) {
+            const gameOverDOMContainer = document.createElement('div');
+            gameOverDOMContainer.id = 'gameOverDOMContainer';
+            gameOverDOMContainer.style.textAlign = 'center';
+            gameOverDOMContainer.style.marginTop = '20px';
+
+            const image = new Image();
+            image.src = finalMinimapImage;
+            image.style.width = '100%';
+            image.style.maxWidth = '300px';
+            image.style.marginBottom = '20px';
+            image.style.background = 'rgba(0, 0, 0, 0.7)';
+            image.style.padding = '10px';
+            image.style.border = '2px solid #00FFFF';
+
+            const link = document.createElement('a');
+            link.href = finalMinimapImage;
+            link.download = 'flux-mosaic.png';
+            link.textContent = 'Save Your Journey';
+            link.style.display = 'block';
+            link.style.color = '#00FFFF';
+            link.style.textDecoration = 'none';
+            link.style.fontSize = '18px';
+            
+            gameOverDOMContainer.appendChild(image);
+            gameOverDOMContainer.appendChild(link);
+            gameOverOverlay.appendChild(gameOverDOMContainer);
+
+            gameOverDOMContainer.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+            });
+        }
     }
     
     function setupPowerupUI() {
@@ -225,106 +238,123 @@
     }
     
     function setupMinimap() {
-    minimapContainer = new PIXI.Container();
-    const bg = new PIXI.Graphics();
-    minimapContainer.addChild(bg);
-
-    minimapDots = new PIXI.Graphics();
-    minimapContainer.addChild(minimapDots);
-    minimapPowerups = new PIXI.Graphics();
-    minimapContainer.addChild(minimapPowerups);
-    minimapTrails = new PIXI.Graphics();
-    minimapContainer.addChild(minimapTrails);
-    minimapPlayer = new PIXI.Graphics();
-    minimapPlayer.beginFill(PLAYER_COLOR);
-    minimapPlayer.drawRect(-2, -2, 4, 4);
-    minimapPlayer.endFill();
-    minimapContainer.addChild(minimapPlayer);
-    minimapEnemies = new PIXI.Container();
-    minimapContainer.addChild(minimapEnemies);
-
-    app.stage.addChild(minimapContainer);
-}
-    
-function updateMinimap() {
-    const scale = MINIMAP_SIZE / (WORLD_BOUNDS * 2);
-    const transformX = (worldX) => (worldX + WORLD_BOUNDS) * scale;
-    const transformY = (worldY) => (worldY + WORLD_BOUNDS) * scale;
-    minimapTrails.clear();
-
-    if (trailPoints.length > 1) {
-        minimapTrails.moveTo(transformX(trailPoints[0].x), transformY(trailPoints[0].y));
-        for (let i = 1; i < trailPoints.length; i++) minimapTrails.lineTo(transformX(trailPoints[i].x), transformY(trailPoints[i].y));
-        minimapTrails.stroke({ width: 1.5, color: PLAYER_COLOR });
+        minimapContainer = new PIXI.Container();
+        minimapBackground = new PIXI.Graphics();
+        minimapContainer.addChild(minimapBackground);
+        minimapDeaths = new PIXI.Graphics();
+        minimapContainer.addChild(minimapDeaths);
+        minimapDots = new PIXI.Graphics();
+        minimapContainer.addChild(minimapDots);
+        minimapPowerups = new PIXI.Graphics();
+        minimapContainer.addChild(minimapPowerups);
+        minimapTrails = new PIXI.Graphics();
+        minimapContainer.addChild(minimapTrails);
+        minimapPlayer = new PIXI.Graphics();
+        minimapContainer.addChild(minimapPlayer);
+        minimapEnemies = new PIXI.Container();
+        minimapContainer.addChild(minimapEnemies);
+        app.stage.addChild(minimapContainer);
     }
     
-    enemyTrails.forEach(trail => {
-        if (trail && trail.length > 1) {
-            minimapTrails.moveTo(transformX(trail[0].x), transformY(trail[0].y));
-            for (let j = 1; j < trail.length; j++) {
-                minimapTrails.lineTo(transformX(trail[j].x), transformY(trail[j].y));
-            }
-            minimapTrails.stroke({ width: 1.5, color: ENEMY_COLOR });
-        }
-    });
+    function updateMinimap(isCapture = false) {
+        const size = isCapture ? MINIMAP_CAPTURE_RESOLUTION : MINIMAP_SIZE;
+        const scale = size / (WORLD_BOUNDS * 2);
+        const strokeWidth = isCapture ? 2.5 : 1.5;
 
-    fadingTrails.forEach(trail => {
-        if (trail && trail.length > 1) {
-            minimapTrails.moveTo(transformX(trail[0].x), transformY(trail[0].y));
-            for (let j = 1; j < trail.length; j++) {
-                minimapTrails.lineTo(transformX(trail[j].x), transformY(trail[j].y));
-            }
-            minimapTrails.stroke({ width: 1.5, color: FADING_TRAIL_COLOR });
-        }
-    });
+        minimapBackground.clear();
+        minimapBackground.beginFill(0x010101, 0.7);
+        minimapBackground.lineStyle(1, 0x30304a);
+        minimapBackground.drawRect(0, 0, size, size);
+        minimapBackground.endFill();
 
-    minimapPowerups.clear();
-    for (const p of powerups) {
-        const color = p.type === 'S' ? POWERUP_S_COLOR : POWERUP_T_COLOR;
-        minimapPowerups.beginFill(color);
-        minimapPowerups.drawCircle(transformX(p.x), transformY(p.y), 2.5);
-        minimapPowerups.endFill();
+        const transformX = (worldX) => (worldX + WORLD_BOUNDS) * scale;
+        const transformY = (worldY) => (worldY + WORLD_BOUNDS) * scale;
+        
+        minimapTrails.clear();
+
+        if (trailPoints.length > 1) {
+            minimapTrails.moveTo(transformX(trailPoints[0].x), transformY(trailPoints[0].y));
+            for (let i = 1; i < trailPoints.length; i++) minimapTrails.lineTo(transformX(trailPoints[i].x), transformY(trailPoints[i].y));
+            minimapTrails.stroke({ width: strokeWidth, color: PLAYER_COLOR });
+        }
+        
+        enemyTrails.forEach(trail => {
+            if (trail && trail.length > 1) {
+                minimapTrails.moveTo(transformX(trail[0].x), transformY(trail[0].y));
+                for (let j = 1; j < trail.length; j++) {
+                    minimapTrails.lineTo(transformX(trail[j].x), transformY(trail[j].y));
+                }
+                minimapTrails.stroke({ width: strokeWidth, color: ENEMY_COLOR });
+            }
+        });
+
+        fadingTrails.forEach(trail => {
+            if (trail && trail.length > 1) {
+                minimapTrails.moveTo(transformX(trail[0].x), transformY(trail[0].y));
+                for (let j = 1; j < trail.length; j++) {
+                    minimapTrails.lineTo(transformX(trail[j].x), transformY(trail[j].y));
+                }
+                minimapTrails.stroke({ width: strokeWidth, color: FADING_TRAIL_COLOR });
+            }
+        });
+
+        minimapPowerups.clear();
+        for (const p of powerups) {
+            const color = p.type === 'S' ? POWERUP_S_COLOR : POWERUP_T_COLOR;
+            minimapPowerups.beginFill(color);
+            minimapPowerups.drawCircle(transformX(p.x), transformY(p.y), 2.5 * (isCapture ? 2 : 1));
+            minimapPowerups.endFill();
+        }
+        
+        minimapDots.clear();
+        for (const d of dots) {
+            minimapDots.beginFill(DOT_COLOR);
+            minimapDots.drawCircle(transformX(d.x), transformY(d.y), 2.0 * (isCapture ? 2 : 1));
+            minimapDots.endFill();
+        }
+
+        minimapDeaths.clear();
+        if (isCapture) {
+            for (const loc of deathLocations) {
+                const x = transformX(loc.x);
+                const y = transformY(loc.y);
+                const markerSize = 12;
+                minimapDeaths.moveTo(x - markerSize, y).lineTo(x + markerSize, y);
+                minimapDeaths.moveTo(x, y - markerSize).lineTo(x, y + markerSize);
+            }
+            minimapDeaths.stroke({ width: 3, color: ENEMY_COLOR });
+        }
+        
+        const playerMarkerSize = isCapture ? 8 : 4;
+        minimapPlayer.clear();
+        minimapPlayer.beginFill(PLAYER_COLOR);
+        minimapPlayer.drawRect(-playerMarkerSize / 2, -playerMarkerSize / 2, playerMarkerSize, playerMarkerSize);
+        minimapPlayer.endFill();
+        minimapPlayer.x = transformX(player.x);
+        minimapPlayer.y = transformY(player.y);
+        
+        const enemyMarkerSize = isCapture ? 8 : 4;
+        minimapEnemies.children.forEach(c => c.visible = false);
+        enemies.forEach((enemy, i) => {
+             if (enemy) {
+                const sprite = minimapEnemies.children[i];
+                if (sprite) {
+                    sprite.clear();
+                    sprite.beginFill(ENEMY_COLOR);
+                    sprite.drawRect(-enemyMarkerSize / 2, -enemyMarkerSize / 2, enemyMarkerSize, enemyMarkerSize);
+                    sprite.endFill();
+                    sprite.x = transformX(enemy.x);
+                    sprite.y = transformY(enemy.y);
+                    sprite.visible = true;
+                }
+            }
+        });
     }
-    
-    minimapDots.clear();
-    for (const d of dots) {
-        minimapDots.beginFill(DOT_COLOR);
-        minimapDots.drawCircle(transformX(d.x), transformY(d.y), 2.0);
-        minimapDots.endFill();
-    }
 
-    minimapPlayer.x = transformX(player.x);
-    minimapPlayer.y = transformY(player.y);
-    
-    minimapEnemies.children.forEach(c => c.visible = false);
-    enemies.forEach((enemy, i) => {
-         if (enemy) {
-            const sprite = minimapEnemies.children[i];
-            if (sprite) {
-                sprite.x = transformX(enemy.x);
-                sprite.y = transformY(enemy.y);
-                sprite.visible = true;
-            }
-        }
-    });
-}
     function repositionUI() {
     const screenWidth = app.screen.width;
     const screenHeight = app.screen.height;
     const smallerDimension = Math.min(screenWidth, screenHeight);
-
-    if (gameOverUI) {
-        gameOverTitle.style.fontSize = Math.max(32, screenWidth * 0.1);
-        gameOverSubtitle.style.fontSize = Math.max(16, screenWidth * 0.04);
-        levelText.style.fontSize = Math.max(20, screenWidth * 0.05);
-        
-        // Dynamically position text to avoid overlap
-        levelText.y = -gameOverTitle.height * 0.8;
-        gameOverSubtitle.y = gameOverTitle.height * 0.8;
-        
-        gameOverUI.x = screenWidth / 2;
-        gameOverUI.y = screenHeight / 2;
-    }
     
     if (readyText) {
         readyText.style.fontSize = Math.max(32, screenWidth * 0.08);
@@ -348,13 +378,6 @@ function updateMinimap() {
     
     if (minimapContainer) {
         MINIMAP_SIZE = smallerDimension / 4;
-        const bg = minimapContainer.children[0];
-        bg.clear();
-        bg.beginFill(0x010101, 0.7);
-        bg.lineStyle(1, 0x30304a);
-        bg.drawRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
-        bg.endFill();
-
         minimapContainer.x = screenWidth - MINIMAP_SIZE - MINIMAP_PADDING;
         minimapContainer.y = MINIMAP_PADDING;
     }
@@ -429,9 +452,6 @@ function updateMinimap() {
         enemyTrails.push([new PIXI.Point(startPos.x, startPos.y)]);
 
         const minimapSprite = new PIXI.Graphics();
-        minimapSprite.beginFill(ENEMY_COLOR);
-        minimapSprite.drawRect(-2, -2, 4, 4);
-        minimapSprite.endFill();
         minimapEnemies.addChild(minimapSprite);
     }
 
@@ -454,6 +474,7 @@ function updateMinimap() {
         enemies = [];
         enemyTrails = [];
         fadingTrails = [];
+        deathLocations = [];
         minimapEnemies.removeChildren();
         trailGraphics.clear();
         enemyTrailGraphics.clear();
@@ -478,9 +499,6 @@ function updateMinimap() {
             enemyTrails.push([new PIXI.Point(startPos.x, startPos.y)]);
             
             const minimapSprite = new PIXI.Graphics();
-            minimapSprite.beginFill(ENEMY_COLOR);
-            minimapSprite.drawRect(-2, -2, 4, 4);
-            minimapSprite.endFill();
             minimapEnemies.addChild(minimapSprite);
         }
         updatePowerupUI();
@@ -495,6 +513,7 @@ function updateMinimap() {
         keys = {};
         activeTouches = 0;
         fadingTrails = [];
+        deathLocations = [];
         vignetteElement = document.getElementById('grind-vignette');
         vignetteElement.classList.remove('grind', 'speed', 'turbo', 'active');
         particleContainer.removeChildren();
@@ -505,7 +524,7 @@ function updateMinimap() {
         spawnPowerup();
         powerupInterval = setInterval(spawnPowerup, POWERUP_SPAWN_INTERVAL);
         enemyIndicator.visible = true;
-        gameOverUI.visible = false;
+        gameOverOverlay.style.display = 'none';
         
         if (pauseOverlay.style.display === 'flex') {
             togglePause();
@@ -521,10 +540,41 @@ function updateMinimap() {
     function restartGame() {
         gameState = 'splash';
         splashScreenElement.style.display = 'flex';
-        gameOverUI.visible = false;
+        gameOverOverlay.style.display = 'none';
+        
+        const gameOverDOMContainer = document.getElementById('gameOverDOMContainer');
+        if (gameOverDOMContainer) {
+            gameOverOverlay.removeChild(gameOverDOMContainer);
+        }
+        levelMinimaps.forEach(tex => tex.destroy());
+        levelMinimaps = [];
+        finalMinimapImage = null;
+    }
+
+    function captureMinimap() {
+        const renderTexture = PIXI.RenderTexture.create({
+            width: MINIMAP_CAPTURE_RESOLUTION,
+            height: MINIMAP_CAPTURE_RESOLUTION,
+        });
+    
+        const originalPosition = minimapContainer.position.clone();
+        minimapContainer.position.set(0, 0);
+    
+        updateMinimap(true);
+    
+        app.renderer.render({
+            container: minimapContainer,
+            target: renderTexture,
+        });
+    
+        minimapContainer.position.copyFrom(originalPosition);
+        updateMinimap(false);
+    
+        levelMinimaps.push(renderTexture);
     }
     
     function nextLevel() {
+        captureMinimap();
         gameState = 'levelTransition';
         transitionTimer = FADE_DURATION;
     }
@@ -1010,7 +1060,35 @@ function updateMinimap() {
 
     function endGame(playerWon = false) {
         if (gameState === 'gameOver') return;
+
+        // Capture the final level's minimap right before ending the game.
+        captureMinimap();
+        
         gameState = 'gameOver';
+
+        if (levelMinimaps.length > 0) {
+            const numMinimaps = levelMinimaps.length;
+            const cols = Math.ceil(Math.sqrt(numMinimaps));
+            const rows = Math.ceil(numMinimaps / cols);
+            const minimapSize = MINIMAP_CAPTURE_RESOLUTION;
+            const mosaicCanvas = document.createElement('canvas');
+            mosaicCanvas.width = cols * minimapSize;
+            mosaicCanvas.height = rows * minimapSize;
+            const ctx = mosaicCanvas.getContext('2d');
+            ctx.fillStyle = '#05050a'; // Background color
+            ctx.fillRect(0, 0, mosaicCanvas.width, mosaicCanvas.height);
+
+
+            for (let i = 0; i < numMinimaps; i++) {
+                const row = Math.floor(i / cols);
+                const col = i % cols;
+                const image = new PIXI.Sprite(levelMinimaps[i]);
+                const imageCanvas = app.renderer.extract.canvas(image);
+                ctx.drawImage(imageCanvas, col * minimapSize, row * minimapSize);
+            }
+            finalMinimapImage = mosaicCanvas.toDataURL('image/png');
+        }
+
         if (!playerWon) {
             createExplosion(player.x, player.y, PLAYER_COLOR);
             playerSprite.alpha = 0;
@@ -1024,6 +1102,7 @@ function updateMinimap() {
         const index = enemies.indexOf(enemy);
         if (index === -1) return;
         
+        deathLocations.push({ x: enemy.x, y: enemy.y });
         createExplosion(enemy.x, enemy.y, ENEMY_COLOR);
         
         if (enemyTrails[index] && enemyTrails[index].length > 1) {
@@ -1265,12 +1344,14 @@ function updateMinimap() {
     });
     
     // --- Initial Setup ---
+// --- Initial Setup ---
     pauseOverlay = document.getElementById('pause-overlay');
+    gameOverOverlay = document.getElementById('game-over-overlay');
     splashScreenElement = document.getElementById('splash-screen');
+    
     drawGrid();
     setupEnemyIndicator();
     setupDotIndicators();
-    setupGameOverUI();
     setupPowerupUI();
     setupDotCountUI();
     setupReadyUI()
@@ -1286,8 +1367,20 @@ function updateMinimap() {
     window.addEventListener('resize', repositionUI);
     repositionUI();
     
+
     splashScreenElement.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         startGame();
+    });
+
+    // --- ADD THESE LINES ---
+    pauseOverlay.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        togglePause();
+    });
+
+    gameOverOverlay.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        restartGame();
     });
 })();
