@@ -516,7 +516,7 @@
     dotContainer.addChild(dot);
   }
 
-function spawnSingleEnemy() {
+  function spawnSingleEnemy() {
     if (gameState !== "playing" && gameState !== "levelTransition") return;
 
     const enemySprite = new PIXI.Graphics();
@@ -802,7 +802,7 @@ function spawnSingleEnemy() {
     grid.stroke({ width: 1, color: GRID_COLOR });
   }
 
-function drawTrails() {
+  function drawTrails() {
     trailGraphics.clear();
     if (trailPoints.length > 1) {
       trailGraphics.moveTo(trailPoints[0].x, trailPoints[0].y);
@@ -824,9 +824,9 @@ function drawTrails() {
         enemyTrailGraphics.moveTo(trail[0].x, trail[0].y);
         for (let j = 1; j < trail.length; j++)
           enemyTrailGraphics.lineTo(trail[j].x, trail[j].y);
-        
+
         const alpha = enemy.isPhantom ? 0.5 : 1.0; // Apply alpha
-        
+
         enemyTrailGraphics.stroke({
           width: TRAIL_WIDTH,
           color: ENEMY_TRAIL_COLOR,
@@ -944,7 +944,7 @@ function drawTrails() {
     }
   }
 
-function updateFadingTrails(delta) {
+  function updateFadingTrails(delta) {
     const segmentsToRemove = Math.max(1, Math.floor(SEGMENTFADE_DELTA * delta));
     for (let i = fadingTrails.length - 1; i >= 0; i--) {
       // --- MODIFICATION ---
@@ -1319,7 +1319,7 @@ function updateFadingTrails(delta) {
     if (powerupInterval) clearInterval(powerupInterval);
   }
 
- function handleEnemyDeath(enemy) {
+  function handleEnemyDeath(enemy) {
     const index = enemies.indexOf(enemy);
     if (index === -1) return;
 
@@ -1352,7 +1352,7 @@ function updateFadingTrails(delta) {
     setTimeout(spawnSingleEnemy, ENEMY_RESPAWN_DELAY);
   }
 
-function checkCollisions() {
+  function checkCollisions() {
     // --- 1. PLAYER COLLISION CHECKS ---
 
     const playerTrailSafe = getSafeTrail(player, trailPoints);
