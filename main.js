@@ -338,13 +338,22 @@
       }
     });
 
-    fadingTrails.forEach((trail) => {
+    fadingTrails.forEach((trailItem) => {
+      const trail = trailItem.trail; // Get the actual trail array
       if (trail && trail.length > 1) {
         minimapTrails.moveTo(transformX(trail[0].x), transformY(trail[0].y));
         for (let j = 1; j < trail.length; j++) {
           minimapTrails.lineTo(transformX(trail[j].x), transformY(trail[j].y));
         }
-        minimapTrails.stroke({ width: strokeWidth, color: FADING_TRAIL_COLOR });
+
+        // Apply alpha if the *fading* trail is a phantom
+        const alpha = trailItem.isPhantom ? 0.4 : 1.0;
+
+        minimapTrails.stroke({
+          width: strokeWidth,
+          color: FADING_TRAIL_COLOR,
+          alpha: alpha, // Set alpha
+        });
       }
     });
 
@@ -507,11 +516,12 @@
     dotContainer.addChild(dot);
   }
 
-  function spawnSingleEnemy() {
+function spawnSingleEnemy() {
     if (gameState !== "playing" && gameState !== "levelTransition") return;
 
     const enemySprite = new PIXI.Graphics();
     setupBike(enemySprite, ENEMY_COLOR);
+    enemySprite.alpha = 0.5; // Set initial phantom alpha
     world.addChild(enemySprite);
 
     const startPos = {
@@ -531,7 +541,24 @@
       aiTurnBias: 0,
       aiBiasCooldown: Math.random() * 120,
       sprite: enemySprite,
+      isPhantom: true, // Add phantom state
+      phantomTimer: null, // Placeholder for the timer
     };
+
+    // Timer to remove phantom state
+    const phantomTimer = setTimeout(() => {
+      if (enemy) {
+        // Check if enemy still exists
+        enemy.isPhantom = false;
+        if (enemy.sprite) {
+          enemy.sprite.alpha = 1.0; // Restore alpha
+        }
+        enemy.phantomTimer = null;
+      }
+    }, 3000); // 3 seconds
+
+    enemy.phantomTimer = phantomTimer; // Store timer reference
+
     enemies.push(enemy);
     enemyTrails.push([new PIXI.Point(startPos.x, startPos.y)]);
 
@@ -775,7 +802,7 @@
     grid.stroke({ width: 1, color: GRID_COLOR });
   }
 
-  function drawTrails() {
+function drawTrails() {
     trailGraphics.clear();
     if (trailPoints.length > 1) {
       trailGraphics.moveTo(trailPoints[0].x, trailPoints[0].y);
@@ -790,28 +817,40 @@
     }
 
     enemyTrailGraphics.clear();
-    enemyTrails.forEach((trail) => {
-      if (trail && trail.length >= 2) {
+    // MODIFIED: Iterate enemies to check phantom state for each trail
+    enemies.forEach((enemy, i) => {
+      const trail = enemyTrails[i];
+      if (enemy && trail && trail.length >= 2) {
         enemyTrailGraphics.moveTo(trail[0].x, trail[0].y);
         for (let j = 1; j < trail.length; j++)
           enemyTrailGraphics.lineTo(trail[j].x, trail[j].y);
+        
+        const alpha = enemy.isPhantom ? 0.5 : 1.0; // Apply alpha
+        
         enemyTrailGraphics.stroke({
           width: TRAIL_WIDTH,
           color: ENEMY_TRAIL_COLOR,
+          alpha: alpha, // Set per-trail alpha
           cap: "round",
           join: "round",
         });
       }
     });
 
-    fadingTrails.forEach((trail) => {
+    fadingTrails.forEach((trailItem) => {
+      const trail = trailItem.trail; // Get the actual trail array
       if (trail && trail.length >= 2) {
         enemyTrailGraphics.moveTo(trail[0].x, trail[0].y);
         for (let j = 1; j < trail.length; j++)
           enemyTrailGraphics.lineTo(trail[j].x, trail[j].y);
+
+        // Apply alpha if the *fading* trail is a phantom
+        const alpha = trailItem.isPhantom ? 0.4 : 1.0;
+
         enemyTrailGraphics.stroke({
           width: TRAIL_WIDTH,
           color: FADING_TRAIL_COLOR,
+          alpha: alpha, // Set alpha
           cap: "round",
           join: "round",
         });
@@ -905,10 +944,15 @@
     }
   }
 
-  function updateFadingTrails(delta) {
+function updateFadingTrails(delta) {
     const segmentsToRemove = Math.max(1, Math.floor(SEGMENTFADE_DELTA * delta));
     for (let i = fadingTrails.length - 1; i >= 0; i--) {
-      const trail = fadingTrails[i];
+      // --- MODIFICATION ---
+      // Was: const trail = fadingTrails[i];
+      const trailItem = fadingTrails[i];
+      const trail = trailItem.trail; // Get the actual array of points
+      // --- END MODIFICATION ---
+
       for (let j = 0; j < segmentsToRemove && trail.length > 1; j++) {
         trail.shift();
       }
@@ -1275,16 +1319,27 @@
     if (powerupInterval) clearInterval(powerupInterval);
   }
 
-  function handleEnemyDeath(enemy) {
+ function handleEnemyDeath(enemy) {
     const index = enemies.indexOf(enemy);
     if (index === -1) return;
+
+    if (enemy.phantomTimer) {
+      clearTimeout(enemy.phantomTimer);
+    }
 
     deathLocations.push({ x: enemy.x, y: enemy.y });
     createExplosion(enemy.x, enemy.y, ENEMY_COLOR);
 
+    // --- MODIFICATION ---
+    // Was: fadingTrails.push(enemyTrails[index]);
     if (enemyTrails[index] && enemyTrails[index].length > 1) {
-      fadingTrails.push(enemyTrails[index]);
+      // Now push an object that stores the trail and its phantom state
+      fadingTrails.push({
+        trail: enemyTrails[index],
+        isPhantom: enemy.isPhantom, // Carry over the phantom status
+      });
     }
+    // --- END MODIFICATION ---
 
     world.removeChild(enemy.sprite);
     enemy.sprite.destroy();
@@ -1297,14 +1352,16 @@
     setTimeout(spawnSingleEnemy, ENEMY_RESPAWN_DELAY);
   }
 
-  function checkCollisions() {
-    const allEnemyTrails = [...enemyTrails, ...fadingTrails];
+function checkCollisions() {
+    // --- 1. PLAYER COLLISION CHECKS ---
 
     const playerTrailSafe = getSafeTrail(player, trailPoints);
+    // Player vs. Self
     if (isBikeCollidingWithTrail(player, playerTrailSafe)) {
       endGame();
       return;
     }
+    // Player vs. Walls
     if (
       Math.abs(player.x) > WORLD_BOUNDS ||
       Math.abs(player.y) > WORLD_BOUNDS
@@ -1313,7 +1370,16 @@
       return;
     }
 
-    for (const trail of allEnemyTrails) {
+    // Player vs. Active Enemy Trails
+    for (let i = 0; i < enemyTrails.length; i++) {
+      const trail = enemyTrails[i];
+      const enemy = enemies[i];
+
+      // Skip collision if the enemy is a phantom
+      if (enemy && enemy.isPhantom) {
+        continue;
+      }
+
       if (
         trail &&
         trail.length > 0 &&
@@ -1324,29 +1390,72 @@
       }
     }
 
+    // Player vs. Fading Trails
+    for (const trailItem of fadingTrails) {
+      // Skip collision if the fading trail is a phantom
+      if (trailItem.isPhantom) {
+        continue;
+      }
+
+      const trail = trailItem.trail;
+      if (
+        trail &&
+        trail.length > 0 &&
+        isBikeCollidingWithTrail(player, trail)
+      ) {
+        endGame();
+        return;
+      }
+    }
+
+    // --- 2. ENEMY COLLISION CHECKS ---
+    // (Enemies are NOT protected by phantom status and will die)
+
     for (let i = enemies.length - 1; i >= 0; i--) {
       const enemy = enemies[i];
       const ownTrail = enemyTrails[i];
       const ownTrailSafe = getSafeTrail(enemy, ownTrail);
 
       let didDie = false;
+
+      // Enemy vs. Self
       if (isBikeCollidingWithTrail(enemy, ownTrailSafe)) {
         didDie = true;
       }
+
+      // Enemy vs. Walls
       if (
         !didDie &&
         (Math.abs(enemy.x) > WORLD_BOUNDS || Math.abs(enemy.y) > WORLD_BOUNDS)
       ) {
         didDie = true;
       }
+
+      // Enemy vs. Player Trail
       if (!didDie && isBikeCollidingWithTrail(enemy, trailPoints)) {
         didDie = true;
       }
 
+      // Enemy vs. Other Active Enemy Trails
       if (!didDie) {
-        for (const otherTrail of allEnemyTrails) {
-          if (otherTrail === ownTrail) continue;
+        for (let j = 0; j < enemyTrails.length; j++) {
+          if (i === j) continue; // Skip self
+          const otherTrail = enemyTrails[j];
+          if (
+            otherTrail &&
+            otherTrail.length > 0 &&
+            isBikeCollidingWithTrail(enemy, otherTrail)
+          ) {
+            didDie = true;
+            break;
+          }
+        }
+      }
 
+      // Enemy vs. Fading Trails
+      if (!didDie) {
+        for (const trailItem of fadingTrails) {
+          const otherTrail = trailItem.trail;
           if (
             otherTrail &&
             otherTrail.length > 0 &&
@@ -1363,7 +1472,6 @@
       }
     }
   }
-
   function updatePowerups() {
     for (let i = powerups.length - 1; i >= 0; i--) {
       const p = powerups[i];
@@ -1606,17 +1714,19 @@
   repositionUI();
 
   splashScreenElement.addEventListener("pointerdown", (e) => {
+    if (e.button === 2) return;
     e.preventDefault();
     startGame();
   });
 
-  // --- ADD THESE LINES ---
   pauseOverlay.addEventListener("pointerdown", (e) => {
+    if (e.button === 2) return;
     e.preventDefault();
     togglePause();
   });
 
   gameOverOverlay.addEventListener("pointerdown", (e) => {
+    if (e.button === 2) return;
     e.preventDefault();
     restartGame();
   });
