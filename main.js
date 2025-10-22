@@ -461,6 +461,7 @@
   }
 
   function spawnPowerup() {
+    if (powerups.length >= 5) return;
     const type = Math.random() < 0.5 ? "S" : "T";
     const color = type === "S" ? POWERUP_S_COLOR : POWERUP_T_COLOR;
     const powerup = new PIXI.Container();
@@ -597,9 +598,11 @@
     trailGraphics.clear();
     enemyTrailGraphics.clear();
 
-    for (let i = 0; i < levelNum; i++) {
+    const numEnemiesToSpawn = Math.min(levelNum, 6);
+    for (let i = 0; i < numEnemiesToSpawn; i++) {
       const enemySprite = new PIXI.Graphics();
       setupBike(enemySprite, ENEMY_COLOR);
+      enemySprite.alpha = 0.5; // Set initial phantom alpha
       world.addChild(enemySprite);
 
       const startPos = {
@@ -619,7 +622,24 @@
         aiTurnBias: 0,
         aiBiasCooldown: Math.random() * 120,
         sprite: enemySprite,
+        isPhantom: true, // Add phantom state
+        phantomTimer: null, // Placeholder for the timer
       };
+
+      // Timer to remove phantom state
+      const phantomTimer = setTimeout(() => {
+        if (enemy) {
+          // Check if enemy still exists
+          enemy.isPhantom = false;
+          if (enemy.sprite) {
+            enemy.sprite.alpha = 1.0; // Restore alpha
+          }
+          enemy.phantomTimer = null;
+        }
+      }, 3000); // 3 seconds
+
+      enemy.phantomTimer = phantomTimer; // Store timer reference
+
       enemies.push(enemy);
       enemyTrails.push([new PIXI.Point(startPos.x, startPos.y)]);
 

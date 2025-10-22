@@ -1,4 +1,4 @@
-const CACHE_NAME = "flux-cache-v0.1.1";
+const CACHE_NAME = "flux-cache-v0.1.2";
 const CACHE_FILES = [
   "./fonts/SixtyFour.woff2",
   "./fonts/Sixtyfour.woff2",
